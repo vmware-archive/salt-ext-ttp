@@ -26,6 +26,7 @@ COVERAGE_VERSION_REQUIREMENT = "coverage==5.2"
 SALT_REQUIREMENT = os.environ.get("SALT_REQUIREMENT") or "salt>=3000.2"
 if SALT_REQUIREMENT == "salt==master":
     SALT_REQUIREMENT = "git+https://github.com/saltstack/salt.git@master"
+TTP_REQUIREMENT = os.environ.get("TTP_REQUIREMENT") or "ttp>=0.5"
 
 # Prevent Python from writing bytecode
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -73,9 +74,13 @@ def _get_pydir(session):
 def tests(session):
     if SKIP_REQUIREMENTS_INSTALL is False:
         # Always have the wheel package installed
-        session.install("wheel", silent=PIP_INSTALL_SILENT)
-        session.install(COVERAGE_VERSION_REQUIREMENT, silent=PIP_INSTALL_SILENT)
-        session.install("-e", ".", silent=PIP_INSTALL_SILENT)
+        session.install("--progress-bar=off", "wheel", silent=PIP_INSTALL_SILENT)
+        session.install(
+            "--progress-bar=off", COVERAGE_VERSION_REQUIREMENT, silent=PIP_INSTALL_SILENT
+        )
+        session.install(
+            "--progress-bar=off", SALT_REQUIREMENT, TTP_REQUIREMENT, silent=PIP_INSTALL_SILENT
+        )
 
         # Install requirements
         requirements_file = REPO_ROOT / "requirements" / _get_pydir(session) / "tests.txt"
@@ -96,6 +101,9 @@ def tests(session):
             install_command = ["--progress-bar=off"]
             install_command += [req.strip() for req in EXTRA_REQUIREMENTS_INSTALL.split()]
             session.install(*install_command, silent=PIP_INSTALL_SILENT)
+
+        # Finally, install out project
+        session.install("-e", ".", silent=PIP_INSTALL_SILENT)
 
     session.run("coverage", "erase")
     args = [
@@ -147,7 +155,7 @@ def tests(session):
             "-o",
             str(COVERAGE_REPORT_PROJECT),
             "--omit=tests/*",
-            "--include=tiamatpip/*",
+            "--include=src/saltext/ttp/*",
         )
         # Generate report for tests code coverage
         session.run(
@@ -155,11 +163,13 @@ def tests(session):
             "xml",
             "-o",
             str(COVERAGE_REPORT_TESTS),
-            "--omit=tiamatpip/*",
+            "--omit=src/saltext/ttp/*",
             "--include=tests/*",
         )
         try:
-            session.run("coverage", "report", "--show-missing", "--include=saltfactories/*,tests/*")
+            session.run(
+                "coverage", "report", "--show-missing", "--include=src/saltext/ttp/*,tests/*"
+            )
         finally:
             # Move the coverage DB to artifacts/coverage in order for it to be archived by CI
             if COVERAGE_REPORT_DB.exists():
