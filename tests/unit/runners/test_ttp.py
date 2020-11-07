@@ -6,7 +6,7 @@ from unittest import TestCase
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-import salt_ext_ttp.runners.ttpmod as ttp_module
+import saltext.ttp.runners.ttpmod as ttp_module
 from salt.exceptions import CommandExecutionError
 from saltfactories.mixins import LoaderModuleMockMixin
 

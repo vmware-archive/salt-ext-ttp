@@ -115,14 +115,12 @@ Sample template::
     index = "intf_counters_test"
     </output>
 """
-# Import python libs
 import logging
 import sys
 import traceback
 
 from salt.exceptions import CommandExecutionError
 
-# Import third party modules
 try:
     from ttp import ttp
 
