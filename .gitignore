@@ -130,3 +130,6 @@ dmypy.json
 
 # Ignore the setuptools_scm auto-generated version module
 src/saltext/ttp/version.py
+
+# Ignore CI generated artifacts
+artifacts/
