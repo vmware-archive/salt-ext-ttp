@@ -1,20 +1,24 @@
 """
 Template Text Parser module
 ===========================
-.. versionadded:: v3001
+
+
 :codeauthor: Denis Mulyalin <d.mulyalin@gmail.com>
 :maturity:   new
 :depends:    TTP
 :platform:   unix, windows
+
 Dependencies
 ------------
 `TTP library <https://pypi.org/project/ttp/>`_ should be installed on minion
 Reference TTP `installation notes <https://ttp.readthedocs.io/en/latest/Installation.html>`_
 for additional dependencies
+
 Introduction
 ------------
 Execution module to extract information from semi-structured text
 produced by minions using `TTP <https://pypi.org/project/ttp/>`_ templates.
+
 Supported SALT results structures
 ---------------------------------
 This module uses TTP inputs system to run SALT commands to obtain text data
@@ -25,24 +29,26 @@ straightaway.
 To cope with above problem TTP execution module have support for this
 results structure:
 - if return result is a text it used as is
-- if return result is a list of text strings, items combined in single blob
-  of text for parsing
+- if return result is a list of text strings, items combined in single blob of text for parsing
 - if return results produced by ``net.cli`` command, commands output combined
-  in a single blob of text reconstructing device's prompt by appending
-  ``minion_id#command`` in front of each command output item
+in a single blob of text reconstructing device's prompt by appending
+``minion_id#command`` in front of each command output item
 - if return results produced by ``nr.cli`` command, commands output combined
-  in a single blob of text reconstructing device's prompt by appending
-  ``host name#command`` in front of each output item
+in a single blob of text reconstructing device's prompt by appending
+``host name#command`` in front of each output item
 - if return results produced by ``mine.get`` command and proxy minion type is
-  ``napalm``, commands output combined following ``net.cli`` command logic
-  in assumption that mine was collected using ``net.cli`` command as well
+``napalm``, commands output combined following ``net.cli`` command logic
+in assumption that mine was collected using ``net.cli`` command as well
 - if return results produced by ``mine.get`` command and proxy minion type is
-  ``nornir``, commands output combined following ``nr.cli`` command logic
-  in assumption that mine was collected using ``nr.cli`` command as well
+``nornir``, commands output combined following ``nr.cli`` command logic
+in assumption that mine was collected using ``nr.cli`` command as well
 For all other results, output passed to input as is and custom TTP input macro
 function should to be used within the template to pre-process results and extract
 text data for parsing.
-Sample TTP template::
+Sample TTP template:
+
+.. code-block: text
+
     <input name="run config">
     fun = "net.cli"
     arg = ['show run']
@@ -60,44 +66,58 @@ Sample TTP template::
     <group name="arp" input="show arp">
     Internet  {{ ip }}  {{ age }}   {{ mac }}  ARPA   {{ intf }}
     </group>
+
 Above template will run two SALT commands to collect output,
 output will be placed in respective inputs, each input parsed
 with specific groups.
+
 **Input Parameters**
   * ``fun`` - mandatory, execution function to run and parse output for
   * ``arg`` - list of arguments to pass to execution function
   * ``kwarg`` - dictionary of key word arguments to pass to execution function
+
 TTP variables
 -------------
 `TTP variables <https://ttp.readthedocs.io/en/latest/Template%20Variables/index.html>`_
 can be referenced within TTP templates to validate results or can be consumed
 by various functions. These template variables are added to parser object automatically:
-  * ``_minion_id_`` - contains id of proxy minion from ``__opts__["id"]`` variable
+
+ * ``_minion_id_`` - contains id of proxy minion from ``__opts__["id"]`` variable
+
 TTP Custom functions
 --------------------
 TTP supports capability to add custom function to parser object for the sake
 of extending functionality.
-.. note:: terms returner and formatter below given in the context of TTP
-  module and reference TTP functions that can be called within TTP templates.
+
+.. note::
+
+    terms returner and formatter below given in the context of TTP
+    module and reference TTP functions that can be called within TTP templates.
+
 Returner - Elasticsearch
 ++++++++++++++++++++++++
 TTP execution module can return parsing results to Elasticsearch database
 using ``document_create`` function of SALT Elasticsearch execution module
 following this logic
-  * if parsing result is a dictionary, it is posted to Elasticsearch as is
-  * if parsing result is a list of dictionaries, each list item posted
-    to Elasticsearch individually
-  * if parsing result is a lists of lists, where each list is a list of dictionaries,
-    each dictionary item posted to Elasticsearch individually
+
+* if parsing result is a dictionary, it is posted to Elasticsearch as is
+* if parsing result is a list of dictionaries, each list item posted to Elasticsearch individually
+* if parsing result is a lists of lists, where each list is a list of dictionaries,
+  each dictionary item posted to Elasticsearch individually
+
 **Prerequisites**
 Minion must be configured with necessary options as per
 `elasticsearch <https://docs.saltstack.com/en/master/ref/modules/all/salt.modules.elasticsearch.html>`_
 execution module documentation. For instance, elasticsearch cluster settings can
 be specified in minion's pillar.
+
 **TTP Elasticsearch Returner Parameters**
 * ``index`` Index name, default is "salt-ttp_mod-v1"
 * ``doc_type`` Type of the document, default is "default"
-Sample template::
+Sample template:
+
+.. code-block: text
+
     <input>
     fun="net.cli"
     arg=["show interface"]
@@ -231,22 +251,30 @@ def _get_text_from_run_result(run_results, function_name=None):
 
 def run(*args, **kwargs):
     """
-    .. versionadded:: v3001
     Function to run TTP Templates retrieving data using SALT execution modules.
     Commands specified either in template's inputs or inline.
     Inline command execution results associated with default inputs only.
+
     :param template: path to TTP template
     :param saltenv: name of SALT environment
     :param vars: dictionary of template variables to pass on to TTP parser
     :param ttp_res_kwargs: arguments to use with
-    'TTP result method <https://ttp.readthedocs.io/en/latest/API%20reference.html#ttp.ttp.result>'_
-    Sample TTP template to use with inline command::
+        `TTP result method <https://ttp.readthedocs.io/en/latest/API%20reference.html#ttp.ttp.result>`_
+
+    Sample TTP template to use with inline command:
+
+    .. code-block: text
+
         interface {{ interface }}
          encapsulation dot1Q {{ dot1q }}
          vrf forwarding {{ vrf }}
          ip address {{ ip }} {{ mask }}
          {{ hostname | set(hostname) }}
-    Sample TTP Template with inputs defined::
+
+    Sample TTP Template with inputs defined:
+
+    .. code-block: text
+
         <input name="in_1">
         fun = "net.cli"
         arg = ['show run']
@@ -262,11 +290,19 @@ def run(*args, **kwargs):
          ip address {{ ip }} {{ mask }}
          {{ hostname | set(hostname) }}
         </group>
-    CLI Examples for template with inputs::
+
+    CLI Examples for template with inputs:
+
+    .. code-block: text
+
         salt minion-2 ttp.run 'salt://ttp/subifs_and_arp.txt'
         salt minion-2 ttp.run template='salt://ttp/subifs_and_arp.txt'
         salt minion-2 ttp.run template='salt://ttp/subifs_and_arp.txt' vars='{"var1": "val1", "a": "b"}'
-    CLI Examples with inline command::
+
+    CLI Examples with inline command:
+
+    .. code-block: text
+
         salt minion-2 ttp.run net.cli "show version" template='salt://ttp/version.txt'
         salt minion-2 ttp.run net.cli "show version" template='salt://ttp/version.txt' vars='{"var1": "val1", "a": "b"}'
     """

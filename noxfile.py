@@ -1,5 +1,6 @@
 # pylint: disable=missing-module-docstring,import-error,protected-access,missing-function-docstring
 import datetime
+import json
 import os
 import pathlib
 import shutil
@@ -74,25 +75,32 @@ def _get_pydir(session):
     return "py{}.{}".format(*version_info)
 
 
-def _install_requirements(session, *passed_requirements, install_source=False):
+def _install_requirements(
+    session,
+    *passed_requirements,
+    install_coverage_requirements=True,
+    install_test_requirements=True,
+    install_source=False
+):
     if SKIP_REQUIREMENTS_INSTALL is False:
         # Always have the wheel package installed
         session.install("--progress-bar=off", "wheel", silent=PIP_INSTALL_SILENT)
-        session.install(
-            "--progress-bar=off", COVERAGE_VERSION_REQUIREMENT, silent=PIP_INSTALL_SILENT
-        )
+        if install_coverage_requirements:
+            session.install(
+                "--progress-bar=off", COVERAGE_VERSION_REQUIREMENT, silent=PIP_INSTALL_SILENT
+            )
         session.install(
             "--progress-bar=off", SALT_REQUIREMENT, TTP_REQUIREMENT, silent=PIP_INSTALL_SILENT
         )
 
-        # Install requirements
-        requirements_file = REPO_ROOT / "requirements" / _get_pydir(session) / "tests.txt"
-        install_command = [
-            "--progress-bar=off",
-            "-r",
-            str(requirements_file.relative_to(REPO_ROOT)),
-        ]
-        session.install(*install_command, silent=PIP_INSTALL_SILENT)
+        if install_test_requirements:
+            requirements_file = REPO_ROOT / "requirements" / _get_pydir(session) / "tests.txt"
+            install_command = [
+                "--progress-bar=off",
+                "-r",
+                str(requirements_file.relative_to(REPO_ROOT)),
+            ]
+            session.install(*install_command, silent=PIP_INSTALL_SILENT)
 
         if EXTRA_REQUIREMENTS_INSTALL:
             session.log(
@@ -228,8 +236,8 @@ class Tee:
 
 
 def _lint(session, rcfile, flags, paths, tee_output=True):
-    requirements_file = os.path.join("requirements", _get_pydir(session), "lint.txt")
-    _install_requirements(session, "-r", requirements_file)
+    requirements_file = REPO_ROOT / "requirements" / _get_pydir(session) / "lint.txt"
+    _install_requirements(session, "-r", str(requirements_file.relative_to(REPO_ROOT)))
 
     if tee_output:
         session.run("pylint", "--version")
@@ -374,3 +382,92 @@ def lint_tests_pre_commit(session):
     else:
         paths = ["tests/"]
     _lint_pre_commit(session, ".pylintrc", flags, paths)
+
+
+@nox.session(python="3")
+def docs(session):
+    """
+    Build Docs
+    """
+    requirements_file = REPO_ROOT / "requirements" / _get_pydir(session) / "docs.txt"
+    _install_requirements(
+        session,
+        "-r",
+        str(requirements_file.relative_to(REPO_ROOT)),
+        install_coverage_requirements=False,
+        install_test_requirements=False,
+        install_source=True,
+    )
+    os.chdir("docs/")
+    session.run("make", "clean", external=True)
+    session.run("make", "linkcheck", "SPHINXOPTS=-W", external=True)
+    session.run("make", "coverage", "SPHINXOPTS=-W", external=True)
+    docs_coverage_file = os.path.join("_build", "html", "python.txt")
+    if os.path.exists(docs_coverage_file):
+        with open(docs_coverage_file) as rfh:
+            contents = rfh.readlines()[2:]
+            if contents:
+                session.error("\n" + "".join(contents))
+    session.run("make", "html", "SPHINXOPTS=-W", external=True)
+    os.chdir("..")
+
+
+@nox.session(name="docs-crosslink-info", python="3")
+def docs_crosslink_info(session):
+    """
+    Report intersphinx cross links information
+    """
+    session.install(
+        "--progress-bar=off",
+        "-r",
+        os.path.join("requirements", "docs.txt"),
+        silent=PIP_INSTALL_SILENT,
+    )
+    os.chdir("docs/")
+    intersphinx_mapping = json.loads(
+        session.run(
+            "python",
+            "-c",
+            "import json; import conf; print(json.dumps(conf.intersphinx_mapping))",
+            silent=True,
+            log=False,
+        )
+    )
+    try:
+        mapping_entry = intersphinx_mapping[session.posargs[0]]
+    except IndexError:
+        session.error(
+            "You need to pass at least one argument whose value must be one of: {}".format(
+                ", ".join(list(intersphinx_mapping))
+            )
+        )
+    except KeyError:
+        session.error(
+            "Only acceptable values for first argument are: {}".format(
+                ", ".join(list(intersphinx_mapping))
+            )
+        )
+    session.run(
+        "python", "-m", "sphinx.ext.intersphinx", mapping_entry[0].rstrip("/") + "/objects.inv"
+    )
+    os.chdir("..")
+
+
+@nox.session(name="gen-api-docs", python="3")
+def gen_api_docs(session):
+    """
+    Generate API Docs
+    """
+    requirements_file = REPO_ROOT / "requirements" / _get_pydir(session) / "docs.txt"
+    _install_requirements(
+        session,
+        "-r",
+        str(requirements_file.relative_to(REPO_ROOT)),
+        install_coverage_requirements=False,
+        install_test_requirements=False,
+        install_source=True,
+    )
+    shutil.rmtree("docs/ref")
+    session.run(
+        "sphinx-apidoc", "--implicit-namespaces", "--module-first", "-o", "docs/ref/", "src/saltext"
+    )
