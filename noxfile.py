@@ -105,6 +105,27 @@ def tests(session):
         # Finally, install out project
         session.install("-e", ".", silent=PIP_INSTALL_SILENT)
 
+    sitecustomize_dir = session.run("salt-factories", "--coverage", silent=True, log=False)
+    python_path_env_var = os.environ.get("PYTHONPATH") or None
+    if python_path_env_var is None:
+        python_path_env_var = sitecustomize_dir
+    else:
+        python_path_entries = python_path_env_var.split(os.pathsep)
+        if sitecustomize_dir in python_path_entries:
+            python_path_entries.remove(sitecustomize_dir)
+        python_path_entries.insert(0, sitecustomize_dir)
+        python_path_env_var = os.pathsep.join(python_path_entries)
+
+    env = {
+        # The updated python path so that sitecustomize is importable
+        "PYTHONPATH": python_path_env_var,
+        # The full path to the .coverage data file. Makes sure we always write
+        # them to the same directory
+        "COVERAGE_FILE": str(COVERAGE_REPORT_DB),
+        # Instruct sub processes to also run under coverage
+        "COVERAGE_PROCESS_START": str(REPO_ROOT / ".coveragerc"),
+    }
+
     session.run("coverage", "erase")
     args = [
         "--rootdir",
@@ -139,7 +160,7 @@ def tests(session):
         else:
             args.append("tests/")
     try:
-        session.run("coverage", "run", "-m", "pytest", *args)
+        session.run("coverage", "run", "-m", "pytest", *args, env=env)
     finally:
         # Always combine and generate the XML coverage report
         try:
