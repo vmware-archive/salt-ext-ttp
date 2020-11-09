@@ -1,3 +1,7 @@
+"""
+Define the required entry-points functions in order for Salt to know
+what and from where it should load this plugin's loaders
+"""
 from . import PACKAGE_ROOT
 
 

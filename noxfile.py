@@ -1,10 +1,14 @@
+# pylint: disable=missing-module-docstring,import-error,protected-access,missing-function-docstring
 import datetime
 import os
 import pathlib
 import shutil
+import sys
+import tempfile
 
 import nox
 from nox.command import CommandFailed
+from nox.virtualenv import VirtualEnv
 
 # Nox options
 #  Reuse existing virtualenvs
@@ -70,8 +74,7 @@ def _get_pydir(session):
     return "py{}.{}".format(*version_info)
 
 
-@nox.session(python=PYTHON_VERSIONS)
-def tests(session):
+def _install_requirements(session, *passed_requirements, install_source=False):
     if SKIP_REQUIREMENTS_INSTALL is False:
         # Always have the wheel package installed
         session.install("--progress-bar=off", "wheel", silent=PIP_INSTALL_SILENT)
@@ -102,8 +105,15 @@ def tests(session):
             install_command += [req.strip() for req in EXTRA_REQUIREMENTS_INSTALL.split()]
             session.install(*install_command, silent=PIP_INSTALL_SILENT)
 
-        # Finally, install out project
-        session.install("-e", ".", silent=PIP_INSTALL_SILENT)
+        if passed_requirements:
+            session.install(*passed_requirements)
+        if install_source:
+            session.install("-e", ".", silent=PIP_INSTALL_SILENT)
+
+
+@nox.session(python=PYTHON_VERSIONS)
+def tests(session):
+    _install_requirements(session, install_source=True)
 
     sitecustomize_dir = session.run("salt-factories", "--coverage", silent=True, log=False)
     python_path_env_var = os.environ.get("PYTHONPATH") or None
@@ -195,3 +205,172 @@ def tests(session):
             # Move the coverage DB to artifacts/coverage in order for it to be archived by CI
             if COVERAGE_REPORT_DB.exists():
                 shutil.move(str(COVERAGE_REPORT_DB), str(ARTIFACTS_DIR / COVERAGE_REPORT_DB.name))
+
+
+class Tee:
+    """
+    Python class to mimic linux tee behaviour
+    """
+
+    def __init__(self, first, second):
+        self._first = first
+        self._second = second
+
+    def write(self, buf):
+        wrote = self._first.write(buf)
+        self._first.flush()
+        self._second.write(buf)
+        self._second.flush()
+        return wrote
+
+    def fileno(self):
+        return self._first.fileno()
+
+
+def _lint(session, rcfile, flags, paths, tee_output=True):
+    requirements_file = os.path.join("requirements", _get_pydir(session), "lint.txt")
+    _install_requirements(session, "-r", requirements_file)
+
+    if tee_output:
+        session.run("pylint", "--version")
+        pylint_report_path = os.environ.get("PYLINT_REPORT")
+
+    cmd_args = ["pylint", "--rcfile={}".format(rcfile)] + list(flags) + list(paths)
+
+    src_path = str(REPO_ROOT / "src")
+    python_path_env_var = os.environ.get("PYTHONPATH") or None
+    if python_path_env_var is None:
+        python_path_env_var = src_path
+    else:
+        python_path_entries = python_path_env_var.split(os.pathsep)
+        if src_path in python_path_entries:
+            python_path_entries.remove(src_path)
+        python_path_entries.insert(0, src_path)
+        python_path_env_var = os.pathsep.join(python_path_entries)
+
+    env = {
+        # The updated python path so that the project is importable
+        # wihtout installing it
+        "PYTHONPATH": python_path_env_var,
+        "PYTHONUNBUFFERED": "1",
+    }
+
+    cmd_kwargs = {"env": env}
+
+    if tee_output:
+        stdout = tempfile.TemporaryFile(mode="w+b")
+        cmd_kwargs["stdout"] = Tee(stdout, sys.__stdout__)
+
+    try:
+        session.run(*cmd_args, **cmd_kwargs)
+    finally:
+        if tee_output:
+            stdout.seek(0)
+            contents = stdout.read()
+            if contents:
+                contents = contents.decode("utf-8")
+                sys.stdout.write(contents)
+                sys.stdout.flush()
+                if pylint_report_path:
+                    # Write report
+                    with open(pylint_report_path, "w") as wfh:
+                        wfh.write(contents)
+                    session.log("Report file written to %r", pylint_report_path)
+            stdout.close()
+
+
+def _lint_pre_commit(session, rcfile, flags, paths):
+    if "VIRTUAL_ENV" not in os.environ:
+        session.error(
+            "This should be running from within a virtualenv and "
+            "'VIRTUAL_ENV' was not found as an environment variable."
+        )
+    if "pre-commit" not in os.environ["VIRTUAL_ENV"]:
+        session.error(
+            "This should be running from within a pre-commit virtualenv and "
+            "'VIRTUAL_ENV'({}) does not appear to be a pre-commit virtualenv.".format(
+                os.environ["VIRTUAL_ENV"]
+            )
+        )
+
+    # Let's patch nox to make it run inside the pre-commit virtualenv
+    try:
+        session._runner.venv = VirtualEnv(  # pylint: disable=unexpected-keyword-arg
+            os.environ["VIRTUAL_ENV"],
+            interpreter=session._runner.func.python,
+            reuse_existing=True,
+            venv=True,
+        )
+    except TypeError:
+        # This is still nox-py2
+        session._runner.venv = VirtualEnv(
+            os.environ["VIRTUAL_ENV"],
+            interpreter=session._runner.func.python,
+            reuse_existing=True,
+        )
+    _lint(session, rcfile, flags, paths, tee_output=False)
+
+
+@nox.session(python="3")
+def lint(session):
+    """
+    Run PyLint against Salt and it's test suite. Set PYLINT_REPORT to a path to capture output.
+    """
+    session.notify("lint-code-{}".format(session.python))
+    session.notify("lint-tests-{}".format(session.python))
+
+
+@nox.session(python="3", name="lint-code")
+def lint_code(session):
+    """
+    Run PyLint against the code. Set PYLINT_REPORT to a path to capture output.
+    """
+    flags = ["--disable=I"]
+    if session.posargs:
+        paths = session.posargs
+    else:
+        paths = ["setup.py", "noxfile.py", "src/"]
+    _lint(session, ".pylintrc", flags, paths)
+
+
+@nox.session(python="3", name="lint-tests")
+def lint_tests(session):
+    """
+    Run PyLint against Salt and it's test suite. Set PYLINT_REPORT to a path to capture output.
+    """
+    flags = [
+        "--disable=I,redefined-outer-name,missing-function-docstring,no-member,missing-module-docstring"
+    ]
+    if session.posargs:
+        paths = session.posargs
+    else:
+        paths = ["tests/"]
+    _lint(session, ".pylintrc", flags, paths)
+
+
+@nox.session(python=False, name="lint-code-pre-commit")
+def lint_code_pre_commit(session):
+    """
+    Run PyLint against the code. Set PYLINT_REPORT to a path to capture output.
+    """
+    flags = ["--disable=I"]
+    if session.posargs:
+        paths = session.posargs
+    else:
+        paths = ["setup.py", "noxfile.py", "src/"]
+    _lint_pre_commit(session, ".pylintrc", flags, paths)
+
+
+@nox.session(python=False, name="lint-tests-pre-commit")
+def lint_tests_pre_commit(session):
+    """
+    Run PyLint against Salt and it's test suite. Set PYLINT_REPORT to a path to capture output.
+    """
+    flags = [
+        "--disable=I,redefined-outer-name,missing-function-docstring,no-member,missing-module-docstring",
+    ]
+    if session.posargs:
+        paths = session.posargs
+    else:
+        paths = ["tests/"]
+    _lint_pre_commit(session, ".pylintrc", flags, paths)

@@ -1,3 +1,4 @@
+# pylint: disable=missing-module-docstring
 import pathlib
 
 PACKAGE_ROOT = pathlib.Path(__file__).resolve().parent

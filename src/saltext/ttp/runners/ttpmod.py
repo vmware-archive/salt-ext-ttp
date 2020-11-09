@@ -122,9 +122,8 @@ Sample template::
     </output>
 """
 import logging
-import sys
-import traceback
 
+import salt.utils.json
 from salt.client import LocalClient
 from salt.exceptions import CommandExecutionError
 
@@ -135,7 +134,7 @@ try:
     from ttp import ttp
 
     HAS_TTP = True
-except ImportError:
+except ImportError:  # pragma: no cover
     HAS_TTP = False
 
 log = logging.getLogger(__name__)
@@ -162,7 +161,6 @@ def _elasticsearch_return(data, **kwargs):
     Custom TTP returner function to return results to elasticsearch
     using SALT elasticsearch execution module.
     """
-    import salt.utils.json
 
     def post_to_elk(data):
         elc_kwargs["body"] = data
@@ -197,6 +195,9 @@ def _elasticsearch_return(data, **kwargs):
 
 
 def _get_text_from_run_result(run_results, minion_name, function_name=None):
+    """
+    Return the test from the run result
+    """
     results_data = []
     if function_name == "net.cli":
         # run_results structure is:
@@ -219,7 +220,7 @@ def _get_text_from_run_result(run_results, minion_name, function_name=None):
             function_name = "nr.cli"
         elif proxytype == "napalm":
             function_name = "net.cli"
-        for minion_id, output in run_results.items():
+        for output in run_results.values():
             results_data += _get_text_from_run_result(
                 output, minion_name, function_name=function_name
             )
@@ -304,14 +305,10 @@ def run(*args, **kwargs):
         raise CommandExecutionError("Failed to get TTP template '{}'".format(template))
     try:
         parser.add_template(template_text)
-    except:
-        exc_type, exc_value, exc_traceback = sys.exc_info()
+    except Exception as exc:  # pylint: disable=broad-except
         raise CommandExecutionError(
-            "Failed to load TTP template: {}\n{}".format(
-                template,
-                "".join(traceback.format_exception(exc_type, exc_value, exc_traceback)),
-            )
-        )
+            "Failed to load TTP template: {}\n{}".format(template, exc)
+        ) from exc
     # get template inputs load
     input_load = parser.get_input_load()
     input_load = (
@@ -349,8 +346,8 @@ def run(*args, **kwargs):
             input_params.setdefault("timeout", __opts__["timeout"])
             result = client.cmd_iter(**input_params)
             # map results data text to TTP inputs
-            for item in result:
-                for minion_name, run_results in item.items():
+            for ritem in result:
+                for minion_name, run_results in ritem.items():
                     # get results data text
                     results_data = _get_text_from_run_result(
                         run_results["ret"],
@@ -370,12 +367,8 @@ def run(*args, **kwargs):
     try:
         parser.parse(one=True)
         ret = parser.result(**ttp_res_kwargs)
-    except:
-        exc_type, exc_value, exc_traceback = sys.exc_info()
+    except Exception as exc:  # pylint: disable=broad-except
         raise CommandExecutionError(
-            "Failed to parse output with TTP template '{}'\n\n{}".format(
-                template,
-                "".join(traceback.format_exception(exc_type, exc_value, exc_traceback)),
-            )
-        )
+            "Failed to parse output with TTP template '{}': {}".format(template, exc)
+        ) from exc
     return ret
