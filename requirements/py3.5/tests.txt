@@ -20,4 +20,4 @@ pytest==6.1.2             # via pytest-salt-factories, pytest-tempdir
 pyzmq==19.0.2             # via pytest-salt-factories
 six==1.15.0               # via packaging, pathlib2
 toml==0.10.2              # via pytest
-zipp==3.4.0               # via importlib-metadata
+zipp==1.2.0               # via importlib-metadata
