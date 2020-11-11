@@ -82,41 +82,45 @@ def _install_requirements(
     install_test_requirements=True,
     install_source=False
 ):
-    if SKIP_REQUIREMENTS_INSTALL is False:
-        # Always have the wheel package installed
-        session.install("--progress-bar=off", "wheel", silent=PIP_INSTALL_SILENT)
-        if install_coverage_requirements:
-            session.install(
-                "--progress-bar=off", COVERAGE_VERSION_REQUIREMENT, silent=PIP_INSTALL_SILENT
-            )
+    if SKIP_REQUIREMENTS_INSTALL is True:
+        return
+
+    # Always have the wheel package installed
+    session.install("--progress-bar=off", "wheel", silent=PIP_INSTALL_SILENT)
+
+    if EXTRA_REQUIREMENTS_INSTALL:
+        session.log(
+            "Installing the following extra requirements because the "
+            "EXTRA_REQUIREMENTS_INSTALL environment variable was set: "
+            "EXTRA_REQUIREMENTS_INSTALL='%s'",
+            EXTRA_REQUIREMENTS_INSTALL,
+        )
+        install_command = ["--progress-bar=off"]
+        install_command += [req.strip() for req in EXTRA_REQUIREMENTS_INSTALL.split()]
+        session.install(*install_command, silent=PIP_INSTALL_SILENT)
+
+    if install_coverage_requirements:
         session.install(
-            "--progress-bar=off", SALT_REQUIREMENT, TTP_REQUIREMENT, silent=PIP_INSTALL_SILENT
+            "--progress-bar=off", COVERAGE_VERSION_REQUIREMENT, silent=PIP_INSTALL_SILENT
         )
 
-        if install_test_requirements:
-            requirements_file = REPO_ROOT / "requirements" / _get_pydir(session) / "tests.txt"
-            install_command = [
-                "--progress-bar=off",
-                "-r",
-                str(requirements_file.relative_to(REPO_ROOT)),
-            ]
-            session.install(*install_command, silent=PIP_INSTALL_SILENT)
+    session.install(
+        "--progress-bar=off", SALT_REQUIREMENT, TTP_REQUIREMENT, silent=PIP_INSTALL_SILENT
+    )
 
-        if EXTRA_REQUIREMENTS_INSTALL:
-            session.log(
-                "Installing the following extra requirements because the "
-                "EXTRA_REQUIREMENTS_INSTALL environment variable was set: "
-                "EXTRA_REQUIREMENTS_INSTALL='%s'",
-                EXTRA_REQUIREMENTS_INSTALL,
-            )
-            install_command = ["--progress-bar=off"]
-            install_command += [req.strip() for req in EXTRA_REQUIREMENTS_INSTALL.split()]
-            session.install(*install_command, silent=PIP_INSTALL_SILENT)
+    if install_test_requirements:
+        requirements_file = REPO_ROOT / "requirements" / _get_pydir(session) / "tests.txt"
+        install_command = [
+            "--progress-bar=off",
+            "-r",
+            str(requirements_file.relative_to(REPO_ROOT)),
+        ]
+        session.install(*install_command, silent=PIP_INSTALL_SILENT)
 
-        if passed_requirements:
-            session.install(*passed_requirements)
-        if install_source:
-            session.install("-e", ".", silent=PIP_INSTALL_SILENT)
+    if passed_requirements:
+        session.install(*passed_requirements)
+    if install_source:
+        session.install("-e", ".", silent=PIP_INSTALL_SILENT)
 
 
 @nox.session(python=PYTHON_VERSIONS)
