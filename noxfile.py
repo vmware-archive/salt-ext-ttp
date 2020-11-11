@@ -105,7 +105,7 @@ def _install_requirements(
         )
 
     session.install(
-        "--progress-bar=off", SALT_REQUIREMENT, TTP_REQUIREMENT, silent=PIP_INSTALL_SILENT
+        "--progress-bar=off", "-vvv", SALT_REQUIREMENT, TTP_REQUIREMENT, silent=PIP_INSTALL_SILENT
     )
 
     if install_test_requirements:
